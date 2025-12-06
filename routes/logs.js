@@ -96,8 +96,8 @@ router.post('/', async (req, res) => {
     }
 
     const result = await pool.query(
-      'INSERT INTO logs (log_id, user_id, item_id, action, details) VALUES ($1, $2, $3, $4, $5) RETURNING *',
-      [log_id, req.user.user_id, item_id, action, details || null]
+      'INSERT INTO logs (log_id, user_id, item_id, action, details, alert_level) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *',
+      [log_id, req.user.user_id, item_id, action, details || null, 'normal']
     );
 
     res.status(201).json({ log: result.rows[0] });
@@ -144,7 +144,7 @@ router.put('/:logId', async (req, res) => {
   }
 });
 
-// Note: No DELETE route adding this in the future,
+// Note: No DELETE route, adding this in the future,
 // after I have created a way to save log data incase accidental deletion occurs
 
 module.exports = router;

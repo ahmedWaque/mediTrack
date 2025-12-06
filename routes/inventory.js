@@ -7,13 +7,8 @@ const router = express.Router();
 
 router.use(authMiddleware);
 
-// Helper function to log actions
-const logAction = async (user_id, item_id, action, details) => {
-  await pool.query(
-    'INSERT INTO logs (log_id, user_id, item_id, action, details) VALUES ($1, $2, $3, $4, $5)',
-    [`LOG${Date.now()}`, user_id, item_id, action, details]
-  );
-};
+const { logAction } = require('../utils/logger');
+const { calculateAlertLevel } = require('../utils/securityConfig');
 
 // GET /inventory
 router.get('/', async (req, res) => {
@@ -54,7 +49,7 @@ router.post('/', roleAuth('m', 'd'), async (req, res) => {
       [item_id, item_name, quantity || 0]
     );
 
-    await logAction(req.user.user_id, item_id, 'added', `${req.user.name} added ${item_name}`);
+    await logAction(req.user.user_id, item_id, 'added', 'added');
 
     res.status(201).json({ item: result.rows[0] });
   } catch (error) {
@@ -76,8 +71,8 @@ router.put('/:itemId', async (req, res) => {
       return res.status(404).json({ message: 'Item not found' });
     }
 
+    const previousQuantity = Number(currentItem.rows[0].quantity) || 0;
     let result;
-    let details;
 
     // Nurses can only update quantity
     if (req.user.role === 'n') {
@@ -88,17 +83,21 @@ router.put('/:itemId', async (req, res) => {
         'UPDATE inventory SET quantity = $1 WHERE item_id = $2 RETURNING *',
         [quantity, itemId]
       );
-      details = `${req.user.name} updated quantity of ${currentItem.rows[0].item_name}`;
     } else {
       // Managers and Directors can update all fields
       result = await pool.query(
         'UPDATE inventory SET item_name = $1, quantity = $2 WHERE item_id = $3 RETURNING *',
         [item_name, quantity, itemId]
       );
-      details = `${req.user.name} updated ${item_name || currentItem.rows[0].item_name}`;
     }
 
-    await logAction(req.user.user_id, itemId, 'updated', details);
+    const updatedQuantity = Number(result.rows[0]?.quantity) || 0;
+    const details = `updated count from ${previousQuantity} to ${updatedQuantity}`;
+    
+    // Calculate alert level based on quantity change
+    const alertLevel = calculateAlertLevel(previousQuantity, updatedQuantity);
+
+    await logAction(req.user.user_id, itemId, 'updated count', details, alertLevel);
 
     res.json({ item: result.rows[0] });
   } catch (error) {
@@ -118,7 +117,7 @@ router.delete('/:itemId', roleAuth('d'), async (req, res) => {
       return res.status(404).json({ message: 'Item not found' });
     }
 
-    await logAction(req.user.user_id, itemId, 'deleted', `${req.user.name} deleted ${result.rows[0].item_name}`);
+    await logAction(req.user.user_id, itemId, 'deleted', 'deleted');
 
     res.json({ message: 'Item deleted successfully' });
   } catch (error) {

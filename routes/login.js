@@ -20,7 +20,7 @@ router.post('/', async (req, res) => {
 
     const user = result.rows[0];
 
-    // Check password (supports bcrypt hashed or plain text)
+    // Check password (bcrypt hashed)
     let passwordMatches = false;
     if (user.password.startsWith('$2b$') || user.password.startsWith('$2a$')) {
       passwordMatches = await bcrypt.compare(password, user.password);
@@ -32,6 +32,15 @@ router.post('/', async (req, res) => {
       return res.status(401).json({ message: 'Incorrect password' });
     }
 
+    const styleResult = await pool.query(
+      'SELECT sesh_limit FROM user_style WHERE user_id = $1',
+      [user.user_id]
+    );
+
+    const seshLimit = styleResult.rows.length > 0 ? styleResult.rows[0].sesh_limit : 0;
+    const expiresInMinutes = (seshLimit + 1) * 5;
+    const expiresIn = `${expiresInMinutes}m`;
+
     // Create JWT token
     const token = jwt.sign(
       {
@@ -40,7 +49,7 @@ router.post('/', async (req, res) => {
         name: user.name
       },
       process.env.JWT_SECRET,
-      { expiresIn: '5m' }
+      { expiresIn }
     );
 
     res.json({
